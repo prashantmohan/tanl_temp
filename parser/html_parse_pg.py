@@ -10,6 +10,8 @@ import boto3
 import hashlib
 import psycopg2
 from pgDAO import pgDAO
+from nltk.stem import PorterStemmer
+from nltk.stem.snowball import SnowballStemmer
 
 import nltk
 #nltk.download()
@@ -256,6 +258,7 @@ def check_if_exists_in_list(input_list, value):
         return True
     else:
         return False
+
 # return json_string
 
 # Main process
@@ -266,9 +269,28 @@ if len(sys.argv) > 1:
     fin_words_df = fin_words_df.query("Word != 'QUESTION' and Word !='QUESTIONS'")
     fin_words_list = fin_words_df["Word"].to_json(orient="records")
     fin_words_list = json.loads(fin_words_list)
+
+    fin_words_df_pos = fin_words_df[
+        (fin_words_df.Positive > 0) & (fin_words_df.Negative == 0) & (fin_words_df.Uncertainty == 0)]
+    fin_words_list_pos = fin_words_df_pos["Word"].to_json(orient="records")
+    fin_words_list_pos = json.loads(fin_words_list_pos)
+
+    fin_words_df_neg = fin_words_df[
+        (fin_words_df.Negative > 0) & (fin_words_df.Positive == 0) & (fin_words_df.Uncertainty == 0)]
+    fin_words_list_neg = fin_words_df_neg["Word"].to_json(orient="records")
+    fin_words_list_neg = json.loads(fin_words_list_neg)
+
+    fin_words_df_neu = fin_words_df[
+        (fin_words_df.Uncertainty > 0) & (fin_words_df.Negative == 0) & (fin_words_df.Positive == 0)]
+    fin_words_list_neu = fin_words_df_neu["Word"].to_json(orient="records")
+    fin_words_list_neu = json.loads(fin_words_list_neu)
+
     filePath = sys.argv[1]
     #client = boto3.client('dynamodb')
     for file in os.listdir(filePath):
+        ques_words = []
+        ans_words = []
+        tr_key_temp = ""
         if file.endswith("-call-transcript"):
             file_location = os.path.join(filePath, file)
             with open(file_location, "r") as myfile:
@@ -278,6 +300,7 @@ if len(sys.argv) > 1:
             summary = parseHTML(page)
             summary.id = next(iter(re.findall(r"[0-9]*", file)), None)
             summary.tr_key = dao.getTr_Key(summary)
+            tr_key_temp = summary.tr_key
             dao.iTranscript(summary)
             for data in summary.analysts:
                 data.an_key = dao.getAn_Key(data)
@@ -286,6 +309,18 @@ if len(sys.argv) > 1:
                 data.company = summary.company
                 data.ex_key = dao.getEx_Key(data)
                 dao.iExecutive(data)
+            #stemmer = PorterStemmer()
+            stemmer = SnowballStemmer("english")
+            for data in summary.updates:
+                flList = list(filter(lambda executive: executive.name.lower() == data.by.lower(), summary.executies))
+                if (len(flList) > 0):
+                    exKey = flList[0].ex_key
+                else:  # Use the first Executive if unabe to find the one( due to mismath in name)
+                    exKey = summary.executies[0].ex_key
+                    keys = word_tokenize(data.detail)
+                    keys = list(filter(lambda d: check_if_exists_in_list(fin_words_list, d.upper()), keys))
+                    keys = ([(stemmer.stem(d), len(list(filter(lambda k: d in k, keys)))) for d in set(keys)])
+                    dao.iTalkKeyword(keys, summary.tr_key, exKey)
             for data in summary.QAList:
                 data.question = data.question.replace("\\'", "'")
                 data.answer = data.answer.replace("\\'", "'")
@@ -307,12 +342,87 @@ if len(sys.argv) > 1:
                 dao.iQA(data)
                 keys = word_tokenize(data.questionASW)
                 keys = list(filter(lambda d: check_if_exists_in_list(fin_words_list, d.upper()), keys))
+                ques_words = keys
                 keys = ([(d, len(list(filter(lambda k: d in k, keys)))) for d in set(keys)])
                 dao.iQAKeyword(keys, data.tr_key, data.qa_key, "Q")
+
+
                 keys = word_tokenize(data.answerASW)
                 keys = list(filter(lambda d: d.upper() in fin_words_list, keys))
+                ans_words = keys
                 keys = ([(d, len(list(filter(lambda k: d in k, keys)))) for d in set(keys)])
                 dao.iQAKeyword(keys, data.tr_key, data.qa_key, "A")
+            ques_pos_words = len(list(filter(lambda d: check_if_exists_in_list(fin_words_list_pos, d.upper()), ques_words)))
+            ques_neg_words = len(list(filter(lambda d: check_if_exists_in_list(fin_words_list_neg, d.upper()), ques_words)))
+            ques_neu_words = len(list(filter(lambda d: check_if_exists_in_list(fin_words_list_neu, d.upper()), ques_words)))
+
+            ans_pos_words = len(list(filter(lambda d: check_if_exists_in_list(fin_words_list_pos, d.upper()), ans_words)))
+            ans_neg_words = len(list(filter(lambda d: check_if_exists_in_list(fin_words_list_neg, d.upper()), ans_words)))
+            ans_neu_words = len(list(filter(lambda d: check_if_exists_in_list(fin_words_list_neu, d.upper()), ans_words)))
+
+            trans = {}
+            trans["tr_key"] = tr_key_temp
+            trans["type"] = "Q"
+            tot_words = (ques_neg_words+ques_pos_words + ques_neu_words)
+
+            trans["sentiment"] = "positive"
+            trans["words_count"] = ques_pos_words
+            trans["count_pct"] = round(ques_pos_words/tot_words,2)
+            dao.iSentiment(trans)
+
+            trans["sentiment"] = "negative"
+            trans["words_count"] = ques_neg_words
+            trans["count_pct"] = round(ques_neg_words / tot_words, 2)
+            dao.iSentiment(trans)
+
+            trans["sentiment"] = "neutral"
+            trans["words_count"] = ques_neu_words
+            trans["count_pct"] = round(ques_neu_words / tot_words, 2)
+            dao.iSentiment(trans)
+
+
+            trans = {}
+            trans["tr_key"] = tr_key_temp
+            trans["type"] = "A"
+            tot_qa_words =tot_words
+            tot_words = (ans_neg_words+ans_pos_words + ans_neu_words)
+
+            trans["sentiment"] = "positive"
+            trans["words_count"] = ans_pos_words
+            trans["count_pct"] = round(ans_pos_words/tot_words,2)
+            dao.iSentiment(trans)
+
+            trans["sentiment"] = "negative"
+            trans["words_count"] = ans_neg_words
+            trans["count_pct"] = round(ans_neg_words / tot_words, 2)
+            dao.iSentiment(trans)
+
+            trans["sentiment"] = "neutral"
+            trans["words_count"] = ans_neu_words
+            trans["count_pct"] = round(ans_neu_words / tot_words, 2)
+            dao.iSentiment(trans)
+
+
+            trans = {}
+            trans["tr_key"] = tr_key_temp
+            trans["type"] = "QA"
+            tot_ans_words = tot_words
+            tot_words = tot_qa_words + tot_ans_words
+
+            trans["sentiment"] = "positive"
+            trans["words_count"] = ans_pos_words + ques_pos_words
+            trans["count_pct"] = round((ans_pos_words + ques_pos_words)/tot_words,2)
+            dao.iSentiment(trans)
+
+            trans["sentiment"] = "negative"
+            trans["words_count"] = ans_neg_words + ques_neg_words
+            trans["count_pct"] = round((ans_neg_words + ques_neg_words)/ tot_words, 2)
+            dao.iSentiment(trans)
+
+            trans["sentiment"] = "neutral"
+            trans["words_count"] = ans_neu_words + ques_neu_words
+            trans["count_pct"] = round((ans_neu_words + ques_neu_words) / tot_words, 2)
+            dao.iSentiment(trans)
 else:
     print("Expects HTML file root location")
 

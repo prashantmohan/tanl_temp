@@ -26,7 +26,7 @@ class pgDAO:
     def delete_transcripts(self, trans):
         self.openConnection()
         cur = self.myConnection.cursor()
-        tables = ['questionanswer', 'keywords', 'customkeymapscore', 'transcripts']
+        tables = ['questionanswer', 'keywords', 'customkeymapscore', 'transcript_sentiment_results', 'keywords_mng_talk', 'transcripts']
         for table in tables:
             sql = "DELETE FROM " + table + " WHERE tr_key=%s"
             data = (trans.tr_key,)
@@ -41,6 +41,16 @@ class pgDAO:
         sql = """INSERT INTO transcripts(tr_key, company, year, quarter, ticker)
              VALUES(%s, %s, %s, %s, %s) """
         data = (trans.tr_key, trans.company, trans.year, trans.quarter, trans.stock,)
+        cur.execute(sql, data)
+        self.myConnection.commit()
+        self.closeConnection()
+
+    def iSentiment(self, trans):
+        self.openConnection()
+        cur = self.myConnection.cursor()
+        sql = """INSERT INTO transcript_sentiment_results(tr_key, type, sentiment, words_count, count_pct)
+             VALUES(%s, %s, %s, %s, %s) """
+        data = (trans["tr_key"], trans["type"], trans["sentiment"], trans["words_count"], trans["count_pct"],)
         cur.execute(sql, data)
         self.myConnection.commit()
         self.closeConnection()
@@ -89,6 +99,17 @@ class pgDAO:
             sql = """INSERT INTO keywords(qa_key, tr_key, type, keyword, count)
              VALUES(%s, %s, %s, %s, %s) """
             data = (qa_key, tr_key, type, keyword, count)
+            cur.execute(sql, data)
+        self.myConnection.commit()
+        self.closeConnection()
+
+    def iTalkKeyword(self, keys, tr_key, ex_key):
+        self.openConnection()
+        cur = self.myConnection.cursor()
+        for (keyword, count) in keys:
+            sql = """INSERT INTO keywords_mng_talk(tr_key, ex_key, keyword, count)
+             VALUES(%s, %s, %s, %s) """
+            data = (tr_key, ex_key, keyword, count)
             cur.execute(sql, data)
         self.myConnection.commit()
         self.closeConnection()
