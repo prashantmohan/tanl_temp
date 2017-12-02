@@ -65,6 +65,12 @@ def removeStopWords(data):
     filtered_sentence = [w for w in word_tokens if not (w.lower() in stop_words or w.upper() in stop_words)]
     return " ".join(filtered_sentence)
 
+def getPercentage(part, total):
+    if(part ==0):
+        pct = round(0.0,2)
+    else:
+        pct = round(part / total, 2)
+    return pct
 
 def parseHTML(htmlData):
     summary = EarningsCall()
@@ -263,13 +269,14 @@ def check_if_exists_in_list(input_list, value):
 
 # Main process
 if len(sys.argv) > 1:
+    stemmer = SnowballStemmer("english")
     dao = pgDAO()
     fin_words_df = pandas.read_csv('LM.csv')
     fin_words_df = fin_words_df[(fin_words_df.Positive > 0) | (fin_words_df.Negative > 0) | (fin_words_df.Uncertainty > 0)]
     fin_words_df = fin_words_df.query("Word != 'QUESTION' and Word !='QUESTIONS'")
     fin_words_list = fin_words_df["Word"].to_json(orient="records")
     fin_words_list = json.loads(fin_words_list)
-
+    
     fin_words_df_pos = fin_words_df[
         (fin_words_df.Positive > 0) & (fin_words_df.Negative == 0) & (fin_words_df.Uncertainty == 0)]
     fin_words_list_pos = fin_words_df_pos["Word"].to_json(orient="records")
@@ -309,8 +316,6 @@ if len(sys.argv) > 1:
                 data.company = summary.company
                 data.ex_key = dao.getEx_Key(data)
                 dao.iExecutive(data)
-            #stemmer = PorterStemmer()
-            stemmer = SnowballStemmer("english")
             for data in summary.updates:
                 flList = list(filter(lambda executive: executive.name.lower() == data.by.lower(), summary.executies))
                 if (len(flList) > 0):
@@ -367,17 +372,17 @@ if len(sys.argv) > 1:
 
             trans["sentiment"] = "positive"
             trans["words_count"] = ques_pos_words
-            trans["count_pct"] = round(ques_pos_words/tot_words,2)
+            trans["count_pct"] = getPercentage(ques_pos_words,tot_words)
             dao.iSentiment(trans)
 
             trans["sentiment"] = "negative"
             trans["words_count"] = ques_neg_words
-            trans["count_pct"] = round(ques_neg_words / tot_words, 2)
+            trans["count_pct"] = getPercentage(ques_neg_words, tot_words)
             dao.iSentiment(trans)
 
             trans["sentiment"] = "neutral"
             trans["words_count"] = ques_neu_words
-            trans["count_pct"] = round(ques_neu_words / tot_words, 2)
+            trans["count_pct"] = getPercentage(ques_neu_words , tot_words)
             dao.iSentiment(trans)
 
 
@@ -389,17 +394,17 @@ if len(sys.argv) > 1:
 
             trans["sentiment"] = "positive"
             trans["words_count"] = ans_pos_words
-            trans["count_pct"] = round(ans_pos_words/tot_words,2)
+            trans["count_pct"] = getPercentage(ans_pos_words,tot_words)
             dao.iSentiment(trans)
 
             trans["sentiment"] = "negative"
             trans["words_count"] = ans_neg_words
-            trans["count_pct"] = round(ans_neg_words / tot_words, 2)
+            trans["count_pct"] = getPercentage(ans_neg_words, tot_words)
             dao.iSentiment(trans)
 
             trans["sentiment"] = "neutral"
             trans["words_count"] = ans_neu_words
-            trans["count_pct"] = round(ans_neu_words / tot_words, 2)
+            trans["count_pct"] = getPercentage(ans_neu_words ,tot_words)
             dao.iSentiment(trans)
 
 
@@ -411,17 +416,17 @@ if len(sys.argv) > 1:
 
             trans["sentiment"] = "positive"
             trans["words_count"] = ans_pos_words + ques_pos_words
-            trans["count_pct"] = round((ans_pos_words + ques_pos_words)/tot_words,2)
+            trans["count_pct"] = getPercentage(ans_pos_words + ques_pos_words,tot_words)
             dao.iSentiment(trans)
 
             trans["sentiment"] = "negative"
             trans["words_count"] = ans_neg_words + ques_neg_words
-            trans["count_pct"] = round((ans_neg_words + ques_neg_words)/ tot_words, 2)
+            trans["count_pct"] = getPercentage(ans_neg_words + ques_neg_words, tot_words)
             dao.iSentiment(trans)
 
             trans["sentiment"] = "neutral"
             trans["words_count"] = ans_neu_words + ques_neu_words
-            trans["count_pct"] = round((ans_neu_words + ques_neu_words) / tot_words, 2)
+            trans["count_pct"] = getPercentage(ans_neu_words + ques_neu_words, tot_words)
             dao.iSentiment(trans)
 else:
     print("Expects HTML file root location")
